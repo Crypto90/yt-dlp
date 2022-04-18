@@ -1,19 +1,18 @@
-from __future__ import unicode_literals
 import os
+import shlex
 import subprocess
 
 from .common import PostProcessor
-from ..compat import compat_shlex_split
 from ..utils import (
+    Popen,
+    PostProcessingError,
     check_executable,
     cli_option,
     encodeArgument,
     encodeFilename,
+    prepend_extension,
     shell_quote,
     str_or_none,
-    Popen,
-    PostProcessingError,
-    prepend_extension,
 )
 
 
@@ -22,12 +21,17 @@ class SponSkrubPP(PostProcessor):
     _temp_ext = 'spons'
     _exe_name = 'sponskrub'
 
-    def __init__(self, downloader, path='', args=None, ignoreerror=False, cut=False, force=False):
+    def __init__(self, downloader, path='', args=None, ignoreerror=False, cut=False, force=False, _from_cli=False):
         PostProcessor.__init__(self, downloader)
         self.force = force
         self.cutout = cut
         self.args = str_or_none(args) or ''  # For backward compatibility
         self.path = self.get_exe(path)
+
+        if not _from_cli:
+            self.deprecation_warning(
+                'yt_dlp.postprocessor.SponSkrubPP support is deprecated and may be removed in a future version. '
+                'Use yt_dlp.postprocessor.SponsorBlock and yt_dlp.postprocessor.ModifyChaptersPP instead')
 
         if not ignoreerror and self.path is None:
             if path:
@@ -74,7 +78,7 @@ class SponSkrubPP(PostProcessor):
         if not self.cutout:
             cmd += ['-chapter']
         cmd += cli_option(self._downloader.params, '-proxy', 'proxy')
-        cmd += compat_shlex_split(self.args)  # For backward compatibility
+        cmd += shlex.split(self.args)  # For backward compatibility
         cmd += self._configuration_args(self._exe_name, use_compat=False)
         cmd += ['--', information['id'], filename, temp_filename]
         cmd = [encodeArgument(i) for i in cmd]

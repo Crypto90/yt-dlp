@@ -1,16 +1,20 @@
+import contextlib
 import os
 import signal
-import asyncio
 import threading
 
 try:
     import websockets
-    has_websockets = True
-except ImportError:
+except (ImportError, SyntaxError):
+    # websockets 3.10 on python 3.6 causes SyntaxError
+    # See https://github.com/yt-dlp/yt-dlp/issues/2633
     has_websockets = False
+else:
+    has_websockets = True
 
 from .common import FileDownloader
 from .external import FFmpegFD
+from ..compat import asyncio
 
 
 class FFmpegSinkFD(FileDownloader):
@@ -26,11 +30,9 @@ class FFmpegSinkFD(FileDownloader):
             except (BrokenPipeError, OSError):
                 pass
             finally:
-                try:
+                with contextlib.suppress(OSError):
                     stdin.flush()
                     stdin.close()
-                except OSError:
-                    pass
                 os.kill(os.getpid(), signal.SIGINT)
 
         class FFmpegStdinFD(FFmpegFD):

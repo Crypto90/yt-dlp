@@ -1,18 +1,10 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 import io
 import quopri
 import re
 import uuid
 
 from .fragment import FragmentFD
-from ..utils import (
-    escapeHTML,
-    formatSeconds,
-    srt_subtitles_timecode,
-    urljoin,
-)
+from ..utils import escapeHTML, formatSeconds, srt_subtitles_timecode, urljoin
 from ..version import __version__ as YT_DLP_VERSION
 
 
@@ -114,8 +106,8 @@ body > figure > img {
         fragment_base_url = info_dict.get('fragment_base_url')
         fragments = info_dict['fragments'][:1] if self.params.get(
             'test', False) else info_dict['fragments']
-        title = info_dict['title']
-        origin = info_dict['webpage_url']
+        title = info_dict.get('title', info_dict['format_id'])
+        origin = info_dict.get('webpage_url', info_dict['url'])
 
         ctx = {
             'filename': filename,
@@ -166,10 +158,15 @@ body > figure > img {
             if (i + 1) <= ctx['fragment_index']:
                 continue
 
-            fragment_url = urljoin(fragment_base_url, fragment['path'])
-            success, frag_content = self._download_fragment(ctx, fragment_url, info_dict)
+            fragment_url = fragment.get('url')
+            if not fragment_url:
+                assert fragment_base_url
+                fragment_url = urljoin(fragment_base_url, fragment['path'])
+
+            success = self._download_fragment(ctx, fragment_url, info_dict)
             if not success:
                 continue
+            frag_content = self._read_fragment(ctx)
 
             mime_type = b'image/jpeg'
             if frag_content.startswith(b'\x89PNG\r\n\x1a\n'):

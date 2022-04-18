@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-
-from __future__ import unicode_literals
-
 # Allow direct execution
 import os
 import sys
@@ -16,7 +13,7 @@ from yt_dlp.postprocessor import (
     FFmpegThumbnailsConvertorPP,
     MetadataFromFieldPP,
     MetadataParserPP,
-    ModifyChaptersPP
+    ModifyChaptersPP,
 )
 
 
@@ -124,11 +121,11 @@ class TestModifyChaptersPP(unittest.TestCase):
         chapters = self._chapters([70], ['c']) + [
             self._sponsor_chapter(10, 20, 'sponsor'),
             self._sponsor_chapter(30, 40, 'preview'),
-            self._sponsor_chapter(50, 60, 'sponsor')]
+            self._sponsor_chapter(50, 60, 'filler')]
         expected = self._chapters(
             [10, 20, 30, 40, 50, 60, 70],
             ['c', '[SponsorBlock]: Sponsor', 'c', '[SponsorBlock]: Preview/Recap',
-             'c', '[SponsorBlock]: Sponsor', 'c'])
+             'c', '[SponsorBlock]: Filler Tangent', 'c'])
         self._remove_marked_arrange_sponsors_test_impl(chapters, expected, [])
 
     def test_remove_marked_arrange_sponsors_UniqueNamesForOverlappingSponsors(self):

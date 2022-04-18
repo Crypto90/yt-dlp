@@ -1,6 +1,3 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 import itertools
 import json
 
@@ -48,6 +45,8 @@ class ChingariBaseIE(InfoExtractor):
 
         return {
             'id': id,
+            'extractor_key': ChingariIE.ie_key(),
+            'extractor': 'Chingari',
             'title': compat_urllib_parse_unquote_plus(clean_html(post_data.get('caption'))),
             'description': compat_urllib_parse_unquote_plus(clean_html(post_data.get('caption'))),
             'duration': media_data.get('duration'),
@@ -67,7 +66,7 @@ class ChingariBaseIE(InfoExtractor):
 
 
 class ChingariIE(ChingariBaseIE):
-    _VALID_URL = r'(?:https?://)(?:www\.)?chingari\.io/share/post\?id=(?P<id>[^&/#?]+)'
+    _VALID_URL = r'https?://(?:www\.)?chingari\.io/share/post\?id=(?P<id>[^&/#?]+)'
     _TESTS = [{
         'url': 'https://chingari.io/share/post?id=612f8f4ce1dc57090e8a7beb',
         'info_dict': {
@@ -102,14 +101,14 @@ class ChingariIE(ChingariBaseIE):
 
 
 class ChingariUserIE(ChingariBaseIE):
-    _VALID_URL = r'(?:https?://)(?:www\.)?chingari\.io/(?!share/post)(?P<id>[^/?]+)'
+    _VALID_URL = r'https?://(?:www\.)?chingari\.io/(?!share/post)(?P<id>[^/?]+)'
     _TESTS = [{
         'url': 'https://chingari.io/dada1023',
-        'playlist_mincount': 3,
         'info_dict': {
             'id': 'dada1023',
         },
-        'entries': [{
+        'params': {'playlistend': 3},
+        'playlist': [{
             'url': 'https://chingari.io/share/post?id=614781f3ade60b3a0bfff42a',
             'info_dict': {
                 'id': '614781f3ade60b3a0bfff42a',

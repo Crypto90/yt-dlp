@@ -1,23 +1,13 @@
-from __future__ import unicode_literals
-
-import re
-import io
 import binascii
+import io
+import re
 
-from ..downloader import get_suitable_downloader
-from .fragment import FragmentFD
 from .external import FFmpegFD
-
-from ..compat import (
-    compat_pycrypto_AES,
-    compat_urlparse,
-)
-from ..utils import (
-    parse_m3u8_attributes,
-    update_url_query,
-    bug_reports_message,
-)
+from .fragment import FragmentFD
 from .. import webvtt
+from ..compat import compat_pycrypto_AES, compat_urlparse
+from ..downloader import get_suitable_downloader
+from ..utils import bug_reports_message, parse_m3u8_attributes, update_url_query
 
 
 class HlsFD(FragmentFD):
@@ -77,6 +67,15 @@ class HlsFD(FragmentFD):
                 message = ('The stream has AES-128 encryption and neither ffmpeg nor pycryptodomex are available; '
                            'Decryption will be performed natively, but will be extremely slow')
         if not can_download:
+            has_drm = re.search('|'.join([
+                r'#EXT-X-FAXS-CM:',  # Adobe Flash Access
+                r'#EXT-X-(?:SESSION-)?KEY:.*?URI="skd://',  # Apple FairPlay
+            ]), s)
+            if has_drm and not self.params.get('allow_unplayable_formats'):
+                self.report_error(
+                    'This video is DRM protected; Try selecting another format with --format or '
+                    'add --check-formats to automatically fallback to the next best format')
+                return False
             message = message or 'Unsupported features have been detected'
             fd = FFmpegFD(self.ydl, self.params)
             self.report_warning(f'{message}; extraction will be delegated to {fd.get_basename()}')
@@ -93,8 +92,7 @@ class HlsFD(FragmentFD):
         if real_downloader and not real_downloader.supports_manifest(s):
             real_downloader = None
         if real_downloader:
-            self.to_screen(
-                '[%s] Fragment downloads will be delegated to %s' % (self.FD_NAME, real_downloader.get_basename()))
+            self.to_screen(f'[{self.FD_NAME}] Fragment downloads will be delegated to {real_downloader.get_basename()}')
 
         def is_ad_fragment_start(s):
             return (s.startswith('#ANVATO-SEGMENT-INFO') and 'type=ad' in s
