@@ -3800,14 +3800,22 @@ class YoutubeTabBaseInfoExtractor(YoutubeBaseInfoExtractor):
             if not isinstance(renderer, dict):
                 continue
             title = self._get_text(renderer, 'title')
-
+            #print("===========================")
+            #print(renderer)
             # playlist
             playlist_id = renderer.get('playlistId')
             if playlist_id:
+                video_id = traverse_obj(renderer, ('navigationEndpoint', 'watchEndpoint', 'videoId'))
+                if video_id:
+                    playlist_uploader = self._get_text(renderer, 'ownerText', 'shortBylineText')
+                    playlist_count = renderer.get('videoCount')
+                    
+                    yield self.url_result(f'https://www.youtube.com/watch?v={video_id}&list={playlist_id}',
+                        ie=YoutubeTabIE.ie_key(), video_id=playlist_id, video_title=title, playlist_uploader=playlist_uploader, playlist_count=playlist_count)
+                    continue
                 yield self.url_result(
                     'https://www.youtube.com/playlist?list=%s' % playlist_id,
-                    ie=YoutubeTabIE.ie_key(), video_id=playlist_id,
-                    video_title=title)
+                    ie=YoutubeTabIE.ie_key(), video_id=playlist_id, video_title=title)
                 continue
             # video
             video_id = renderer.get('videoId')
