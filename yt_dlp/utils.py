@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import asyncio
 import atexit
 import base64
 import binascii
@@ -37,11 +36,12 @@ import tempfile
 import time
 import traceback
 import urllib.parse
+import warnings
 import xml.etree.ElementTree
 import zlib
 
 from .compat import (
-    compat_brotli,
+    asyncio,
     compat_chr,
     compat_cookiejar,
     compat_etree_fromstring,
@@ -64,17 +64,9 @@ from .compat import (
     compat_urllib_parse_urlparse,
     compat_urllib_request,
     compat_urlparse,
-    compat_websockets,
 )
+from .dependencies import brotli, certifi, websockets
 from .socks import ProxyType, sockssocket
-
-try:
-    import certifi
-
-    # The certificate may not be bundled in executable
-    has_certifi = os.path.exists(certifi.where())
-except ImportError:
-    has_certifi = False
 
 
 def register_socks_protocols():
@@ -138,7 +130,7 @@ def random_user_agent():
 SUPPORTED_ENCODINGS = [
     'gzip', 'deflate'
 ]
-if compat_brotli:
+if brotli:
     SUPPORTED_ENCODINGS.append('br')
 
 std_headers = {
@@ -1267,7 +1259,7 @@ class YoutubeDLHandler(compat_urllib_request.HTTPHandler):
     def brotli(data):
         if not data:
             return data
-        return compat_brotli.decompress(data)
+        return brotli.decompress(data)
 
     def http_request(self, req):
         # According to RFC 3986, URLs can not contain non-ASCII characters, however this is not
@@ -3013,7 +3005,7 @@ def qualities(quality_ids):
     return q
 
 
-POSTPROCESS_WHEN = {'pre_process', 'after_filter', 'before_dl', 'after_move', 'post_process', 'after_video', 'playlist'}
+POSTPROCESS_WHEN = ('pre_process', 'after_filter', 'before_dl', 'after_move', 'post_process', 'after_video', 'playlist')
 
 
 DEFAULT_OUTTMPL = {
@@ -5230,17 +5222,23 @@ class WebSocketsWrapper():
     pool = None
 
     def __init__(self, url, headers=None, connect=True):
-        self.loop = asyncio.events.new_event_loop()
-        self.conn = compat_websockets.connect(
-            url, extra_headers=headers, ping_interval=None,
-            close_timeout=float('inf'), loop=self.loop, ping_timeout=float('inf'))
+        self.loop = asyncio.new_event_loop()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # https://github.com/aaugustin/websockets/blob/9c87d43f1d7bbf6847350087aae74fd35f73a642/src/websockets/legacy/client.py#L480
+            # the reason to keep giving `loop` parameter: we aren't in async function
+            self.conn = websockets.connect(
+                url, extra_headers=headers, ping_interval=None,
+                close_timeout=float('inf'), loop=self.loop, ping_timeout=float('inf'))
         if connect:
             self.__enter__()
         atexit.register(self.__exit__, None, None, None)
 
     def __enter__(self):
         if not self.pool:
-            self.pool = self.run_with_loop(self.conn.__aenter__(), self.loop)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                self.pool = self.run_with_loop(self.conn.__aenter__(), self.loop)
         return self
 
     def send(self, *args):
@@ -5260,7 +5258,7 @@ class WebSocketsWrapper():
     # for contributors: If there's any new library using asyncio needs to be run in non-async, move these function out of this class
     @staticmethod
     def run_with_loop(main, loop):
-        if not asyncio.coroutines.iscoroutine(main):
+        if not asyncio.iscoroutine(main):
             raise ValueError(f'a coroutine was expected, got {main!r}')
 
         try:
@@ -5294,9 +5292,6 @@ class WebSocketsWrapper():
                 })
 
 
-has_websockets = bool(compat_websockets)
-
-
 def merge_headers(*dicts):
     """Merge dicts of http headers case insensitively, prioritizing the latter ones"""
     return {k.title(): v for k, v in itertools.chain.from_iterable(map(dict.items, dicts))}
@@ -5312,3 +5307,8 @@ class classproperty:
 
 def Namespace(**kwargs):
     return collections.namedtuple('Namespace', kwargs)(**kwargs)
+
+
+# Deprecated
+has_certifi = bool(certifi)
+has_websockets = bool(websockets)
