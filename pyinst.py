@@ -1,28 +1,15 @@
 #!/usr/bin/env python3
+
 import os
 import platform
 import sys
 
 from PyInstaller.__main__ import run as run_pyinstaller
 
-OS_NAME = platform.system()
-if OS_NAME == 'Windows':
-    from PyInstaller.utils.win32.versioninfo import (
-        FixedFileInfo,
-        SetVersion,
-        StringFileInfo,
-        StringStruct,
-        StringTable,
-        VarFileInfo,
-        VarStruct,
-        VSVersionInfo,
-    )
-elif OS_NAME == 'Darwin':
-    pass
-else:
-    raise Exception(f'{OS_NAME} is not supported')
-
-ARCH = platform.architecture()[0][:2]
+OS_NAME, MACHINE, ARCH = sys.platform, platform.machine(), platform.architecture()[0][:2]
+if MACHINE in ('x86_64', 'AMD64') or ('i' in MACHINE and '86' in MACHINE):
+    # NB: Windows x86 has MACHINE = AMD64 irrespective of bitness
+    MACHINE = 'x86' if ARCH == '32' else ''
 
 
 def main():
@@ -33,11 +20,8 @@ def main():
     if not onedir and '-F' not in opts and '--onefile' not in opts:
         opts.append('--onefile')
 
-    name = 'yt-dlp%s' % ('_macos' if OS_NAME == 'Darwin' else '_x86' if ARCH == '32' else '')
-    final_file = ''.join((
-        'dist/', f'{name}/' if onedir else '', name, '.exe' if OS_NAME == 'Windows' else ''))
-
-    print(f'Building yt-dlp v{version} {ARCH}bit for {OS_NAME} with options {opts}')
+    name, final_file = exe(onedir)
+    print(f'Building yt-dlp v{version} for {OS_NAME} {platform.machine()} with options {opts}')
     print('Remember to update the version using  "devscripts/update-version.py"')
     if not os.path.isfile('yt_dlp/extractor/lazy_extractors.py'):
         print('WARNING: Building without lazy_extractors. Run  '
@@ -49,9 +33,6 @@ def main():
         '--icon=devscripts/logo.ico',
         '--upx-exclude=vcruntime140.dll',
         '--noconfirm',
-        # NB: Modules that are only imported dynamically must be added here.
-        # --collect-submodules may not work correctly if user has a yt-dlp installed via PIP
-        '--hidden-import=yt_dlp.compat._legacy',
         *dependency_options(),
         *opts,
         'yt_dlp/__main__.py',
@@ -63,7 +44,7 @@ def main():
 
 
 def parse_options():
-    # Compatability with older arguments
+    # Compatibility with older arguments
     opts = sys.argv[1:]
     if opts[0:1] in (['32'], ['64']):
         if ARCH != opts[0]:
@@ -77,6 +58,21 @@ def read_version(fname):
     with open(fname, encoding='utf-8') as f:
         exec(compile(f.read(), fname, 'exec'))
         return locals()['__version__']
+
+
+def exe(onedir):
+    """@returns (name, path)"""
+    name = '_'.join(filter(None, (
+        'yt-dlp',
+        {'win32': '', 'darwin': 'macos'}.get(OS_NAME, OS_NAME),
+        MACHINE
+    )))
+    return name, ''.join(filter(None, (
+        'dist/',
+        onedir and f'{name}/',
+        name,
+        OS_NAME == 'win32' and '.exe'
+    )))
 
 
 def version_to_list(version):
@@ -109,13 +105,24 @@ def pycryptodome_module():
 
 
 def set_version_info(exe, version):
-    if OS_NAME == 'Windows':
+    if OS_NAME == 'win32':
         windows_set_version(exe, version)
 
 
 def windows_set_version(exe, version):
+    from PyInstaller.utils.win32.versioninfo import (
+        FixedFileInfo,
+        SetVersion,
+        StringFileInfo,
+        StringStruct,
+        StringTable,
+        VarFileInfo,
+        VarStruct,
+        VSVersionInfo,
+    )
+
     version_list = version_to_list(version)
-    suffix = '_x86' if ARCH == '32' else ''
+    suffix = MACHINE and f'_{MACHINE}'
     SetVersion(exe, VSVersionInfo(
         ffi=FixedFileInfo(
             filevers=version_list,
@@ -129,9 +136,9 @@ def windows_set_version(exe, version):
         ),
         kids=[
             StringFileInfo([StringTable('040904B0', [
-                StringStruct('Comments', 'yt-dlp%s Command Line Interface.' % suffix),
+                StringStruct('Comments', 'yt-dlp%s Command Line Interface' % suffix),
                 StringStruct('CompanyName', 'https://github.com/yt-dlp'),
-                StringStruct('FileDescription', 'yt-dlp%s' % (' (32 Bit)' if ARCH == '32' else '')),
+                StringStruct('FileDescription', 'yt-dlp%s' % (MACHINE and f' ({MACHINE})')),
                 StringStruct('FileVersion', version),
                 StringStruct('InternalName', f'yt-dlp{suffix}'),
                 StringStruct('LegalCopyright', 'pukkandan.ytdlp@gmail.com | UNLICENSE'),
