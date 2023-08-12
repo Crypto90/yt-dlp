@@ -1033,7 +1033,8 @@ class YoutubeBaseInfoExtractor(InfoExtractor):
             expected_type=str)) or ''
         url = f'https://www.youtube.com/watch?v={video_id}'
         if overlay_style == 'SHORTS' or '/shorts/' in navigation_url:
-            url = f'https://www.youtube.com/shorts/{video_id}'
+            #url = f'https://www.youtube.com/shorts/{video_id}'
+            return None
 
         time_text = (self._get_text(renderer, 'publishedTimeText', 'videoInfo')
                      or self._get_text(reel_header_renderer, 'timestampText') or '')
