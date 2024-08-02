@@ -1104,7 +1104,8 @@ class YoutubeBaseInfoExtractor(InfoExtractor):
             expected_type=str)) or ''
         url = f'https://www.youtube.com/watch?v={video_id}'
         if overlay_style == 'SHORTS' or '/shorts/' in navigation_url:
-            url = f'https://www.youtube.com/shorts/{video_id}'
+            #url = f'https://www.youtube.com/shorts/{video_id}'
+            return None
 
         time_text = (self._get_text(renderer, 'publishedTimeText', 'videoInfo')
                      or self._get_text(reel_header_renderer, 'timestampText') or '')
@@ -4879,11 +4880,14 @@ class YoutubeTabBaseInfoExtractor(YoutubeBaseInfoExtractor):
             # playlist
             playlist_id = renderer.get('playlistId')
             if playlist_id:
-                yield self.url_result(
-                    f'https://www.youtube.com/playlist?list={playlist_id}',
-                    ie=YoutubeTabIE.ie_key(), video_id=playlist_id,
-                    video_title=title)
-                continue
+                video_id = traverse_obj(renderer, ('navigationEndpoint', 'watchEndpoint', 'videoId'))
+                if video_id:
+                    playlist_uploader = self._get_text(renderer, 'ownerText', 'shortBylineText')
+                    playlist_count = renderer.get('videoCount')
+
+                    yield self.url_result(f'https://www.youtube.com/watch?v={video_id}&list={playlist_id}',
+                        ie=YoutubeTabIE.ie_key(), video_id=playlist_id, video_title=title, playlist_uploader=playlist_uploader, playlist_count=playlist_count)
+                    continue
             # video
             video_id = renderer.get('videoId')
             if video_id:
