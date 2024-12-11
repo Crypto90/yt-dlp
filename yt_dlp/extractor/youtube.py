@@ -5128,12 +5128,21 @@ class YoutubeTabBaseInfoExtractor(YoutubeBaseInfoExtractor):
             self.report_warning(
                 f'Unsupported lockup view model content type "{content_type}"{bug_reports_message()}', only_once=True)
             return
-        return self.url_result(
-            f'https://www.youtube.com/playlist?list={content_id}', ie=YoutubeTabIE, video_id=content_id,
-            title=traverse_obj(view_model, (
-                'metadata', 'lockupMetadataViewModel', 'title', 'content', {str})),
-            thumbnails=self._extract_thumbnails(view_model, (
-                'contentImage', 'collectionThumbnailViewModel', 'primaryThumbnail', 'thumbnailViewModel', 'image'), final_key='sources'))
+        video_id = traverse_obj(view_model, ('rendererContext', 'commandContext', 'onTap', 'innertubeCommand', 'watchEndpoint', 'videoId'))
+        if video_id:
+            playlist_uploader = traverse_obj(view_model, ('metadata', 'lockupMetadataViewModel', 'metadata', 'contentMetadataViewModel', 'metadataRows', 0, 'metadataParts', 0, 'text', 'content'))
+            playlist_count = traverse_obj(view_model, ('contentImage', 'collectionThumbnailViewModel', 'primaryThumbnail', 'thumbnailViewModel', 'overlays', 0, 'thumbnailOverlayBadgeViewModel', 'thumbnailBadges', 0, 'thumbnailBadgeViewModel', 'text'))
+            if " " in playlist_count:
+                playlist_count = playlist_count.split(" ")[0]
+            return self.url_result(f'https://www.youtube.com/watch?v={video_id}&list={content_id}',
+                ie=YoutubeTabIE.ie_key(), video_id=content_id,
+                title=traverse_obj(view_model, (
+                    'metadata', 'lockupMetadataViewModel', 'title', 'content', {str})),
+                playlist_uploader=playlist_uploader, playlist_count=playlist_count,
+                thumbnails=self._extract_thumbnails(view_model, (
+                    'contentImage', 'collectionThumbnailViewModel', 'primaryThumbnail', 'thumbnailViewModel', 'image'), final_key='sources')
+            )
+        return
 
     def _rich_entries(self, rich_grid_renderer):
         if lockup_view_model := traverse_obj(rich_grid_renderer, ('content', 'lockupViewModel', {dict})):
