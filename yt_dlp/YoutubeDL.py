@@ -157,7 +157,7 @@ from .utils import (
     write_json_file,
     write_string,
 )
-from .utils._utils import _UnsafeExtensionError, _YDLLogger
+from .utils._utils import _UnsafeExtensionError, _YDLLogger, _ProgressState
 from .utils.networking import (
     HTTPHeaderDict,
     clean_headers,
@@ -266,7 +266,9 @@ class YoutubeDL:
     outtmpl_na_placeholder: Placeholder for unavailable meta fields.
     restrictfilenames: Do not allow "&" and spaces in file names
     trim_file_name:    Limit length of filename (extension excluded)
-    windowsfilenames:  Force the filenames to be windows compatible
+    windowsfilenames:  True: Force filenames to be Windows compatible
+                       False: Sanitize filenames only minimally
+                       This option has no effect when running on Windows
     ignoreerrors:      Do not stop on download/postprocessing errors.
                        Can be 'only_download' to ignore only download errors.
                        Default is 'only_download' for CLI, but False for API
@@ -281,7 +283,10 @@ class YoutubeDL:
     lazy_playlist:     Process playlist entries as they are received.
     matchtitle:        Download only matching titles.
     rejecttitle:       Reject downloads for matching titles.
-    logger:            Log messages to a logging.Logger instance.
+    logger:            A class having a `debug`, `warning` and `error` function where
+                       each has a single string parameter, the message to be logged.
+                       For compatibility reasons, both debug and info messages are passed to `debug`.
+                       A debug message will have a prefix of `[debug] ` to discern it from info messages.
     logtostderr:       Print everything to stderr instead of stdout.
     consoletitle:      Display progress in the console window's titlebar.
     writedescription:  Write the video description to a .description file
@@ -593,7 +598,7 @@ class YoutubeDL:
         # NB: Keep in sync with the docstring of extractor/common.py
         'url', 'manifest_url', 'manifest_stream_number', 'ext', 'format', 'format_id', 'format_note',
         'width', 'height', 'aspect_ratio', 'resolution', 'dynamic_range', 'tbr', 'abr', 'acodec', 'asr', 'audio_channels',
-        'vbr', 'fps', 'vcodec', 'container', 'filesize', 'filesize_approx', 'rows', 'columns',
+        'vbr', 'fps', 'vcodec', 'container', 'filesize', 'filesize_approx', 'rows', 'columns', 'hls_media_playlist_data',
         'player_url', 'protocol', 'fragment_base_url', 'fragments', 'is_from_start', 'is_dash_periods', 'request_data',
         'preference', 'language', 'language_preference', 'quality', 'source_preference', 'cookies',
         'http_headers', 'stretched_ratio', 'no_resume', 'has_drm', 'extra_param_to_segment_url', 'extra_param_to_key_url',
@@ -637,19 +642,18 @@ class YoutubeDL:
         self.cache = Cache(self)
         self.__header_cookies = []
 
+        try:
+            windows_enable_vt_mode()
+        except Exception as e:
+            self.write_debug(f'Failed to enable VT mode: {e}')
+
         stdout = sys.stderr if self.params.get('logtostderr') else sys.stdout
         self._out_files = Namespace(
             out=stdout,
             error=sys.stderr,
             screen=sys.stderr if self.params.get('quiet') else stdout,
-            console=None if os.name == 'nt' else next(
-                filter(supports_terminal_sequences, (sys.stderr, sys.stdout)), None),
+            console=next(filter(supports_terminal_sequences, (sys.stderr, sys.stdout)), None),
         )
-
-        try:
-            windows_enable_vt_mode()
-        except Exception as e:
-            self.write_debug(f'Failed to enable VT mode: {e}')
 
         if self.params.get('no_color'):
             if self.params.get('color') is not None:
@@ -951,21 +955,22 @@ class YoutubeDL:
             self._write_string(f'{self._bidi_workaround(message)}\n', self._out_files.error, only_once=only_once)
 
     def _send_console_code(self, code):
-        if os.name == 'nt' or not self._out_files.console:
-            return
+        if not supports_terminal_sequences(self._out_files.console):
+            return False
         self._write_string(code, self._out_files.console)
+        return True
 
-    def to_console_title(self, message):
-        if not self.params.get('consoletitle', False):
+    def to_console_title(self, message=None, progress_state=None, percent=None):
+        if not self.params.get('consoletitle'):
             return
-        message = remove_terminal_sequences(message)
-        if os.name == 'nt':
-            if ctypes.windll.kernel32.GetConsoleWindow():
-                # c_wchar_p() might not be necessary if `message` is
-                # already of type unicode()
-                ctypes.windll.kernel32.SetConsoleTitleW(ctypes.c_wchar_p(message))
-        else:
-            self._send_console_code(f'\033]0;{message}\007')
+
+        if message:
+            success = self._send_console_code(f'\033]0;{remove_terminal_sequences(message)}\007')
+            if not success and os.name == 'nt' and ctypes.windll.kernel32.GetConsoleWindow():
+                ctypes.windll.kernel32.SetConsoleTitleW(message)
+
+        if isinstance(progress_state, _ProgressState):
+            self._send_console_code(progress_state.get_ansi_escape(percent))
 
     def save_console_title(self):
         if not self.params.get('consoletitle') or self.params.get('simulate'):
@@ -979,6 +984,7 @@ class YoutubeDL:
 
     def __enter__(self):
         self.save_console_title()
+        self.to_console_title(progress_state=_ProgressState.INDETERMINATE)
         return self
 
     def save_cookies(self):
@@ -987,6 +993,7 @@ class YoutubeDL:
 
     def __exit__(self, *args):
         self.restore_console_title()
+        self.to_console_title(progress_state=_ProgressState.HIDDEN)
         self.close()
 
     def close(self):
@@ -1192,8 +1199,7 @@ class YoutubeDL:
 
     def prepare_outtmpl(self, outtmpl, info_dict, sanitize=False):
         """ Make the outtmpl and info_dict suitable for substitution: ydl.escape_outtmpl(outtmpl) % info_dict
-        @param sanitize    Whether to sanitize the output as a filename.
-                           For backward compatibility, a function can also be passed
+        @param sanitize    Whether to sanitize the output as a filename
         """
 
         info_dict.setdefault('epoch', int(time.time()))  # keep epoch consistent once set
@@ -1309,14 +1315,23 @@ class YoutubeDL:
 
         na = self.params.get('outtmpl_na_placeholder', 'NA')
 
-        def filename_sanitizer(key, value, restricted=self.params.get('restrictfilenames')):
+        def filename_sanitizer(key, value, restricted):
             return sanitize_filename(str(value), restricted=restricted, is_id=(
                 bool(re.search(r'(^|[_.])id(\.|$)', key))
                 if 'filename-sanitization' in self.params['compat_opts']
                 else NO_DEFAULT))
 
-        sanitizer = sanitize if callable(sanitize) else filename_sanitizer
-        sanitize = bool(sanitize)
+        if callable(sanitize):
+            self.deprecation_warning('Passing a callable "sanitize" to YoutubeDL.prepare_outtmpl is deprecated')
+        elif not sanitize:
+            pass
+        elif (sys.platform != 'win32' and not self.params.get('restrictfilenames')
+                and self.params.get('windowsfilenames') is False):
+            def sanitize(key, value):
+                return str(value).replace('/', '\u29F8').replace('\0', '')
+        else:
+            def sanitize(key, value):
+                return filename_sanitizer(key, value, restricted=self.params.get('restrictfilenames'))
 
         def _dumpjson_default(obj):
             if isinstance(obj, (set, LazyList)):
@@ -1399,13 +1414,13 @@ class YoutubeDL:
 
             if sanitize:
                 # If value is an object, sanitize might convert it to a string
-                # So we convert it to repr first
+                # So we manually convert it before sanitizing
                 if fmt[-1] == 'r':
                     value, fmt = repr(value), str_fmt
                 elif fmt[-1] == 'a':
                     value, fmt = ascii(value), str_fmt
                 if fmt[-1] in 'csra':
-                    value = sanitizer(last_field, value)
+                    value = sanitize(last_field, value)
 
             key = '{}\0{}'.format(key.replace('%', '%\0'), outer_mobj.group('format'))
             TMPL_DICT[key] = value
@@ -2108,7 +2123,7 @@ class YoutubeDL:
         m = operator_rex.fullmatch(filter_spec)
         if m:
             try:
-                comparison_value = int(m.group('value'))
+                comparison_value = float(m.group('value'))
             except ValueError:
                 comparison_value = parse_filesize(m.group('value'))
                 if comparison_value is None:
