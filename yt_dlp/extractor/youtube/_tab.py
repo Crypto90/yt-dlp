@@ -404,6 +404,7 @@ class YoutubeTabBaseInfoExtractor(YoutubeBaseInfoExtractor):
             channel_url=format_field(channel_info, 'channel_id', 'https://www.youtube.com/channel/%s', default=None),
             uploader_url=format_field(channel_info, 'uploader_id', 'https://www.youtube.com/%s', default=None),
             creators=traverse_obj(collaborator_data, (..., 'content', {str}, all, filter)),
+            playlist_uploader=channel_info.get('uploader'),
             **channel_info)
 
     def _rich_entries(self, rich_grid_renderer):
