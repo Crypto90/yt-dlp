@@ -325,7 +325,13 @@ class YoutubeTabBaseInfoExtractor(YoutubeBaseInfoExtractor):
             thumb_keys = (None,)
         elif content_type in ('LOCKUP_CONTENT_TYPE_PLAYLIST', 'LOCKUP_CONTENT_TYPE_PODCAST'):
             ie = YoutubeTabIE
-            url = f'https://www.youtube.com/playlist?list={content_id}'
+            first_video_id = traverse_obj(view_model, ('rendererContext', 'commandContext', 'onTap', 'innertubeCommand', 'watchEndpoint', 'videoId', {str}))
+            if not first_video_id:
+                first_video_id = traverse_obj(view_model, ('itemPlayback', 'inlinePlayerData', 'onSelect', 'innertubeCommand', 'watchEndpoint', 'videoId', {str}))
+            if first_video_id:
+                url = f'https://www.youtube.com/watch?v={first_video_id}&list={content_id}'
+            else:
+                url = f'https://www.youtube.com/playlist?list={content_id}'
             thumb_keys = ('collectionThumbnailViewModel', 'primaryThumbnail')
         else:
             self.report_warning(
@@ -337,7 +343,7 @@ class YoutubeTabBaseInfoExtractor(YoutubeBaseInfoExtractor):
         content_mdvm = traverse_obj(lockup_mdvm, ('metadata', 'contentMetadataViewModel', {dict}))
 
         thumbnail_badge_view_models = traverse_obj(view_model, (
-            'contentImage', 'thumbnailViewModel', 'overlays', ..., (
+            'contentImage', *thumb_keys, 'thumbnailViewModel', 'overlays', ..., (
                 ('thumbnailBottomOverlayViewModel', 'badges'),
                 ('thumbnailOverlayBadgeViewModel', 'thumbnailBadges'),
             ), ..., 'thumbnailBadgeViewModel', {dict}))
@@ -372,12 +378,15 @@ class YoutubeTabBaseInfoExtractor(YoutubeBaseInfoExtractor):
         badge_styles = traverse_obj(content_mdvm, (
             'metadataRows', ..., 'badges', ..., 'badgeViewModel', 'badgeStyle', {str}))
 
+        playlist_count = traverse_obj(thumbnail_badge_view_models, (..., 'text', {parse_count}, any))
+
         return self.url_result(
             url, ie, content_id,
             title=traverse_obj(lockup_mdvm, ('title', 'content', {str})),
             thumbnails=self._extract_thumbnails(view_model, (
                 'contentImage', *thumb_keys, 'thumbnailViewModel', 'image'), final_key='sources'),
             duration=parse_duration(duration_text),
+            playlist_count=playlist_count,
             view_count=(
                 traverse_obj(views_and_time, (0, 'text', 'content', {parse_count}))
                 # view_count isn't always available; only extract if this metadataRow is 2 metadataParts
